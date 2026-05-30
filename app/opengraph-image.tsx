@@ -57,7 +57,7 @@ export default function Image() {
             fontWeight: 600,
           }}
         >
-          Tazim's Personal Movie Archive
+          Tazim&apos;s Personal Movie Archive
         </div>
       </div>
     ),

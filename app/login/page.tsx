@@ -89,7 +89,7 @@ export default function LoginPage() {
         </form>
 
         <div className="mt-8 border-t border-border/50 pt-6 text-center">
-          <p className="mb-4 text-sm font-semibold text-muted">Don't have credentials? Contact me.</p>
+          <p className="mb-3 text-sm font-bold text-muted">Don&apos;t have credentials? Contact me.</p>
           <a
             href="https://www.tazim.dev"
             target="_blank"
