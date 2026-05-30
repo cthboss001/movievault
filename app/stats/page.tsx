@@ -25,34 +25,24 @@ function formatRuntime(minutes: number) {
   return `${hours}h ${remainingMinutes}m`;
 }
 
-async function fetchStats(): Promise<StatsResponse> {
-  try {
-    const baseUrl =
-      process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : "http://localhost:3000";
+import { getStats } from "@/lib/stats/get-stats";
 
-    const res = await fetch(`${baseUrl}/api/stats`, {
-      cache: "no-store"
-    });
-
-    return res.json() as Promise<StatsResponse>;
-  } catch {
-    return {
-      stats: {
-        totalWatched: 0,
-        totalRuntimeMinutes: 0,
-        averageRating: null,
-        topGenres: [],
-        watchedByYear: []
-      },
-      databaseMissing: false
-    };
-  }
-}
 
 export default async function StatsPage() {
-  const { stats, databaseMissing } = await fetchStats();
+  let stats: StatsResponse["stats"] = {
+    totalWatched: 0,
+    totalRuntimeMinutes: 0,
+    averageRating: null,
+    topGenres: [],
+    watchedByYear: []
+  };
+  let databaseMissing = false;
+
+  try {
+    stats = await getStats();
+  } catch {
+    databaseMissing = true;
+  }
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 pb-16 pt-8 sm:px-6 sm:pt-14">
