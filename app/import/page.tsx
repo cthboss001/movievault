@@ -88,25 +88,25 @@ function BookmarkletSection({
   }
 
   return (
-    <section className="mt-6 rounded-xl border border-ink/8 bg-white p-6">
+    <section className="mt-6 rounded-xl glass-card p-6">
       <div className="mb-4 flex items-center gap-3">
         <span className="text-2xl">{icon}</span>
         <div>
-          <h2 className="font-black text-ink">{label}</h2>
-          <div className="text-xs font-semibold text-ink/45 mt-1">{instructions}</div>
+          <h2 className="font-black text-text">{label}</h2>
+          <div className="text-xs font-semibold text-muted mt-1">{instructions}</div>
         </div>
       </div>
       
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center bg-ink/5 p-4 rounded-lg">
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center bg-surface-2 p-4 rounded-lg">
         <button
           onClick={handleCopy}
-          className={["shrink-0 px-4 py-2.5 rounded-lg text-sm font-bold text-white shadow-sm transition hover:scale-[1.02] active:scale-95", color].join(" ")}
+          className={["shrink-0 px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm transition hover:scale-[1.02] active:scale-95", color].join(" ")}
         >
           {copied ? "✓ Copied to clipboard" : "Copy scraping code"}
         </button>
-        <div className="text-sm font-medium text-ink/60">
+        <div className="text-sm font-medium text-muted">
           <p>1. Copy the code</p>
-          <p>2. Open your profile page, press <kbd className="font-mono bg-white px-1 py-0.5 rounded shadow-sm text-xs">F12</kbd> (Console)</p>
+          <p>2. Open your profile page, press <kbd className="font-mono bg-surface border border-border px-1 py-0.5 rounded shadow-sm text-xs">F12</kbd> (Console)</p>
           <p>3. Paste the code and hit Enter</p>
         </div>
       </div>
@@ -203,13 +203,13 @@ function FileUploader() {
   }
 
   return (
-    <section className="mt-8 rounded-xl border-2 border-dashed border-vault/30 bg-vault/5 p-8 text-center transition-colors hover:border-vault/50">
-      <h2 className="text-xl font-black text-ink mb-2">Upload your file</h2>
-      <p className="text-sm text-ink/60 font-semibold mb-6">
-        Accepts <code className="font-mono text-xs text-vault">movievault-letterboxd.json</code> OR IMDb&apos;s <code className="font-mono text-xs text-vault">ratings.csv</code>.
+    <section className="mt-8 rounded-xl border-2 border-dashed border-border bg-surface p-8 text-center transition-colors hover:border-accent/50">
+      <h2 className="text-xl font-black text-text mb-2">Upload your file</h2>
+      <p className="text-sm text-muted font-semibold mb-6">
+        Accepts <code className="font-mono text-xs text-accent">movievault-letterboxd.json</code> OR IMDb&apos;s <code className="font-mono text-xs text-accent">ratings.csv</code>.
       </p>
 
-      <label className="inline-flex cursor-pointer items-center justify-center rounded-xl bg-vault px-6 py-3 text-sm font-bold text-white shadow-soft transition hover:bg-vault/90 active:scale-95">
+      <label className="inline-flex cursor-pointer items-center justify-center rounded-xl bg-accent px-6 py-3 text-sm font-bold text-background shadow-soft transition hover:bg-accent/90 active:scale-95">
         {uploading ? "Importing..." : "Choose File (.json or .csv)"}
         <input
           type="file"
@@ -221,15 +221,69 @@ function FileUploader() {
       </label>
 
       {result && (
-        <div className="mt-4 block rounded-lg bg-green-100 px-4 py-2 text-sm font-bold text-green-800">
+        <div className="mt-4 block rounded-lg bg-surface-2 border border-border px-4 py-2 text-sm font-bold text-text">
           ✅ Import complete: {result.added} new movies added, {result.updated} updated.
         </div>
       )}
       {error && (
-        <div className="mt-4 block rounded-lg bg-red-100 px-4 py-2 text-sm font-bold text-red-800">
+        <div className="mt-4 block rounded-lg bg-red-950/20 border border-red-900/50 px-4 py-2 text-sm font-bold text-red-500">
           ❌ {error}
         </div>
       )}
+    </section>
+  );
+}
+
+function PosterEnricher() {
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<{ processed: number; remaining: number } | null>(null);
+
+  async function startEnrichment() {
+    setRunning(true);
+    try {
+      while (true) {
+        const res = await fetch("/api/enrich", { method: "POST" });
+        const data = await res.json();
+        
+        if (!res.ok) throw new Error(data.error || "Enrichment failed");
+        
+        setProgress({ processed: data.processed, remaining: data.totalRemaining });
+        
+        if (data.totalRemaining === 0 || data.processed === 0) {
+          break; // Done
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Enrichment stopped or failed.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <section className="mt-8 rounded-xl glass-card p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div>
+        <h2 className="text-lg font-black text-text">Fetch Movie Posters</h2>
+        <p className="text-sm font-medium text-muted">
+          Match your imported titles with TMDB to automatically download posters and overviews.
+        </p>
+      </div>
+      
+      <div className="flex flex-col items-end shrink-0">
+        <button
+          onClick={startEnrichment}
+          disabled={running}
+          className="rounded-lg bg-surface-2 border border-border px-5 py-2.5 text-sm font-bold text-text shadow-sm transition hover:bg-border disabled:opacity-50"
+        >
+          {running ? "Fetching..." : "Fetch Posters"}
+        </button>
+        {progress && (
+          <p className="text-xs font-semibold text-muted mt-2">
+            {progress.remaining > 0 ? `${progress.remaining} movies left` : "All movies enriched!"}
+          </p>
+        )}
+      </div>
     </section>
   );
 }
@@ -239,14 +293,14 @@ export default function ImportPage() {
     <main className="mx-auto w-full max-w-3xl px-4 pb-16 pt-8 sm:px-6 sm:pt-14">
       {/* Header */}
       <section>
-        <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-vault/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-vault">
+        <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-accent/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-accent">
           <span>⚡</span>
           Bulletproof Import
         </p>
-        <h1 className="text-4xl font-black leading-tight tracking-[-0.03em] text-ink sm:text-5xl">
+        <h1 className="text-4xl font-black leading-tight tracking-[-0.03em] text-text sm:text-5xl">
           Bypass all restrictions.
         </h1>
-        <p className="mt-4 max-w-xl text-base font-semibold text-ink/50">
+        <p className="mt-4 max-w-xl text-base font-semibold text-muted">
           Because of strict bot protection on Letterboxd and IMDb, the most reliable way to get your data is using browser scripts or official exports.
         </p>
       </section>
@@ -265,21 +319,21 @@ export default function ImportPage() {
       />
 
       {/* IMDb CSV Instructions */}
-      <section className="mt-4 rounded-xl border border-ink/8 bg-white p-6">
+      <section className="mt-4 rounded-xl glass-card p-6">
         <div className="mb-4 flex items-center gap-3">
           <span className="text-2xl">⭐</span>
           <div>
-            <h2 className="font-black text-ink">IMDb — All Ratings</h2>
-            <div className="text-xs font-semibold text-ink/45 mt-1">
+            <h2 className="font-black text-text">IMDb — All Ratings</h2>
+            <div className="text-xs font-semibold text-muted mt-1">
               IMDb has a built-in export feature. No script needed!
             </div>
           </div>
         </div>
         
-        <div className="text-sm font-medium text-ink/70 space-y-2 mt-4 ml-1">
-          <p>1. Go to your <a href="https://www.imdb.com/list/ratings" target="_blank" rel="noreferrer" className="text-vault hover:underline">IMDb Ratings page</a>.</p>
+        <div className="text-sm font-medium text-muted/80 space-y-2 mt-4 ml-1">
+          <p>1. Go to your <a href="https://www.imdb.com/list/ratings" target="_blank" rel="noreferrer" className="text-accent hover:underline">IMDb Ratings page</a>.</p>
           <p>2. Look for the <strong>Export</strong> button (it&apos;s often near the top right, sometimes behind a 3-dots menu icon).</p>
-          <p>3. This will download a file named <code className="font-mono bg-ink/5 px-1 py-0.5 rounded text-xs">ratings.csv</code>.</p>
+          <p>3. This will download a file named <code className="font-mono bg-surface-2 border border-border px-1 py-0.5 rounded text-xs">ratings.csv</code>.</p>
           <p>4. Upload that CSV file below.</p>
         </div>
       </section>
@@ -287,14 +341,17 @@ export default function ImportPage() {
       {/* Uploader */}
       <FileUploader />
 
+      {/* Poster Enrichment */}
+      <PosterEnricher />
+
       {/* Notes */}
-      <section className="mt-8 rounded-xl border border-amber-100 bg-amber-50 px-5 py-4 text-sm font-semibold text-amber-800">
-        <p className="font-black mb-1">📌 How to use the Console (F12) for Letterboxd</p>
-        <ul className="space-y-1 text-amber-700 list-disc list-inside">
+      <section className="mt-8 rounded-xl glass-card px-5 py-4 text-sm font-semibold text-muted">
+        <p className="font-black text-text mb-1">📌 How to use the Console (F12) for Letterboxd</p>
+        <ul className="space-y-1 list-disc list-inside">
           <li>Press <strong>F12</strong> (or right-click and select &quot;Inspect&quot;) to open Developer Tools</li>
           <li>Click the <strong>Console</strong> tab</li>
           <li>Paste the code and press Enter. A green box will appear showing progress.</li>
-          <li>If your browser warns you about pasting code, you may need to type <code className="font-mono bg-amber-100 px-1 rounded">allow pasting</code> first.</li>
+          <li>If your browser warns you about pasting code, you may need to type <code className="font-mono bg-surface-2 border border-border px-1 rounded">allow pasting</code> first.</li>
         </ul>
       </section>
     </main>

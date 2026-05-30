@@ -10,10 +10,7 @@ function SourceBadge({ source }: { source: MovieSource }) {
   return (
     <span
       className={[
-        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.06em]",
-        isImdb
-          ? "bg-amber-100 text-amber-700"
-          : "bg-teal-100 text-teal-700"
+        "inline-flex items-center gap-1 rounded bg-black/60 backdrop-blur-md px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.06em] text-text",
       ].join(" ")}
       title={isImdb ? "IMDb" : "Letterboxd"}
     >
@@ -38,7 +35,7 @@ function StarRating({ rating }: { rating: number }) {
   }
 
   return (
-    <span className="text-[11px] text-amber-500 tracking-[-0.02em]" title={`${rating} / 5`}>
+    <span className="text-[11px] text-accent tracking-[-0.02em]" title={`${rating} / 5`}>
       {stars.join("")}
     </span>
   );
@@ -46,9 +43,9 @@ function StarRating({ rating }: { rating: number }) {
 
 export function MovieCard({ movie }: MovieCardProps) {
   return (
-    <article className="group flex flex-col overflow-hidden rounded-xl border border-ink/8 bg-white shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-soft hover:border-vault/25">
+    <article className="group flex flex-col gap-2 transition-all duration-200 cursor-pointer">
       {/* Poster */}
-      <div className="relative aspect-[2/3] overflow-hidden bg-gradient-to-b from-ink/5 to-ink/10">
+      <div className="relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-surface-2 shadow-sm transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
         {movie.posterUrl ? (
           <Image
             src={movie.posterUrl}
@@ -67,13 +64,13 @@ export function MovieCard({ movie }: MovieCardProps) {
               fill="none"
               stroke="currentColor"
               strokeWidth="1.5"
-              className="text-ink/20"
+              className="text-muted/30"
             >
               <rect x="2" y="2" width="20" height="20" rx="3" />
               <circle cx="8.5" cy="8.5" r="1.5" />
               <path d="m21 15-5-5L5 21" />
             </svg>
-            <span className="text-xs font-semibold text-ink/30">No poster</span>
+            <span className="text-xs font-semibold text-muted/50">No poster</span>
           </div>
         )}
 
@@ -91,28 +88,21 @@ export function MovieCard({ movie }: MovieCardProps) {
       </div>
 
       {/* Info */}
-      <div className="flex flex-1 flex-col gap-2 p-3">
+      <div className="flex flex-col gap-1 px-1">
         <div>
-          <h2 className="line-clamp-2 text-sm font-black leading-tight tracking-[0] text-ink">
+          <h2 className="line-clamp-2 text-sm font-black leading-tight tracking-[0] text-text transition-colors group-hover:text-accent-hover">
             {movie.title}
           </h2>
-          <p className="mt-0.5 text-xs font-semibold text-ink/45">
-            {movie.year ?? "Year unknown"}
-          </p>
-        </div>
-
-        <div className="mt-auto flex items-end justify-between gap-2">
-          <span className="line-clamp-1 text-xs font-semibold text-ink/50">
-            {movie.genres.slice(0, 2).join(" · ") || "Uncategorized"}
-          </span>
-          {movie.rating ? (
-            <div className="flex shrink-0 flex-col items-end gap-0.5">
-              <StarRating rating={movie.rating} />
-              <span className="text-[10px] font-bold text-ink/40">
-                {movie.rating.toFixed(1)}
-              </span>
-            </div>
-          ) : null}
+          <div className="mt-0.5 flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-muted">
+              {movie.year ?? "Year unknown"}
+            </p>
+            {movie.rating ? (
+              <div className="flex shrink-0 items-center gap-1">
+                <StarRating rating={movie.rating} />
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </article>

@@ -57,18 +57,20 @@ export default async function StatsPage() {
   return (
     <main className="mx-auto w-full max-w-6xl px-4 pb-16 pt-8 sm:px-6 sm:pt-14">
       <section>
-        <p className="mb-3 inline-flex items-center gap-2 rounded-full bg-ember/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.16em] text-ember">
-          <span>📊</span>
-          Vault analytics
-        </p>
-        <h1 className="text-4xl font-black leading-[1.08] tracking-[-0.03em] text-ink sm:text-5xl">
+        <div className="animate-float">
+          <p className="mb-4 inline-flex items-center gap-2 rounded-full bg-accent/10 px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.2em] text-accent shadow-[0_0_30px_rgba(45,212,191,0.25)] backdrop-blur-xl">
+            <span className="text-[14px]">✦</span>
+            Vault analytics
+          </p>
+        </div>
+        <h1 className="text-4xl font-black leading-[1.08] tracking-[-0.03em] text-text sm:text-5xl">
           Your watching patterns, summarized.
         </h1>
       </section>
 
       {databaseMissing ? (
-        <div className="mt-10 rounded-xl border border-amber-200 bg-amber-50 px-5 py-6 text-sm font-semibold text-amber-800">
-          <p className="font-black text-base mb-1">🗄️ No database connected</p>
+        <div className="mt-10 rounded-xl glass-card px-5 py-6 text-sm font-semibold text-muted">
+          <p className="font-black text-base text-text mb-1">🗄️ No database connected</p>
           <p>Configure a PostgreSQL database and run a sync to see your stats here.</p>
         </div>
       ) : (
@@ -114,12 +116,31 @@ export default async function StatsPage() {
           </section>
 
           {stats.totalWatched === 0 && (
-            <div className="mt-8 rounded-xl border border-ink/8 bg-white px-5 py-10 text-center">
-              <p className="text-3xl mb-3">🎬</p>
-              <p className="font-black text-ink text-lg">No watch history yet.</p>
-              <p className="mt-2 text-sm font-semibold text-ink/50">
+            <div className="mt-8 rounded-xl glass-card px-5 py-10 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center text-accent">
+                <svg 
+                  viewBox="0 0 24 24" 
+                  width="32" 
+                  height="32" 
+                  stroke="currentColor" 
+                  strokeWidth="1.5" 
+                  fill="none" 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  className="animate-[spin_12s_linear_infinite]"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <circle cx="12" cy="12" r="3" />
+                  <line x1="12" y1="2" x2="12" y2="9" />
+                  <line x1="12" y1="15" x2="12" y2="22" />
+                  <line x1="2" y1="12" x2="9" y2="12" />
+                  <line x1="15" y1="12" x2="22" y2="12" />
+                </svg>
+              </div>
+              <p className="font-black text-text text-lg">No watch history yet.</p>
+              <p className="mt-2 text-sm font-semibold text-muted">
                 Head back to the{" "}
-                <Link href="/" className="text-vault underline underline-offset-2">
+                <Link href="/" className="text-accent underline underline-offset-2">
                   search page
                 </Link>{" "}
                 and press <strong>Sync</strong> to import your movies.

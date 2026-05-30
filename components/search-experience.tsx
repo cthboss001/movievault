@@ -50,10 +50,10 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={[
-        "rounded-full px-3 py-1 text-xs font-bold transition-all duration-150",
+        "rounded-full px-3.5 py-1.5 text-xs font-bold transition-all duration-150",
         active
-          ? "bg-vault text-white shadow-sm"
-          : "bg-white/70 text-ink/60 border border-ink/10 hover:border-vault/40 hover:text-vault"
+          ? "bg-accent text-background shadow-[0_0_12px_rgba(45,212,191,0.2)]"
+          : "bg-surface-2 text-muted hover:text-text hover:bg-border/50"
       ].join(" ")}
     >
       {label}
@@ -63,13 +63,10 @@ function FilterChip({
 
 function SkeletonCard() {
   return (
-    <div className="overflow-hidden rounded-xl border border-ink/8 bg-white animate-pulse">
-      <div className="aspect-[2/3] bg-ink/8" />
-      <div className="p-3 space-y-2">
-        <div className="h-3 w-3/4 rounded bg-ink/8" />
-        <div className="h-2 w-1/3 rounded bg-ink/6" />
-        <div className="h-2 w-1/2 rounded bg-ink/5" />
-      </div>
+    <div className="flex flex-col gap-2 animate-pulse">
+      <div className="aspect-[2/3] w-full rounded-xl bg-surface-2" />
+      <div className="h-3 w-3/4 rounded bg-surface-2" />
+      <div className="h-2 w-1/3 rounded bg-border" />
     </div>
   );
 }
@@ -173,14 +170,6 @@ export function SearchExperience() {
   const [loadStatus, setLoadStatus] = useState<
     "loading" | "ready" | "error" | "no-database"
   >("loading");
-  const [syncStatus, setSyncStatus] = useState<
-    "idle" | "syncing" | "success" | "error"
-  >("idle");
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
-  const [syncSourceResults, setSyncSourceResults] = useState<{
-    imdb: SyncSourceResult;
-    letterboxd: SyncSourceResult;
-  } | undefined>(undefined);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
   // Filters
@@ -239,46 +228,6 @@ export function SearchExperience() {
     };
   }, []);
 
-  async function handleSync() {
-    setSyncStatus("syncing");
-    setSyncMessage(null);
-    setSyncSourceResults(undefined);
-
-    try {
-      const response = await fetch("/api/sync", { method: "POST" });
-      const data = (await parseJsonResponse(response)) as SyncResponse;
-
-      if (!response.ok || !data.result) {
-        throw new Error(data.error ?? "Sync failed.");
-      }
-
-      const { syncedCount, addedCount, updatedCount, skippedCount, sourceCounts, sourceErrors } =
-        data.result;
-
-      setSyncStatus("success");
-      setSyncMessage(
-        `Sync complete — ${syncedCount} movies (${addedCount} new, ${updatedCount} updated, ${skippedCount} unchanged)`
-      );
-      setSyncSourceResults({
-        imdb: {
-          count: sourceCounts.imdb,
-          error: sourceErrors.imdb
-        },
-        letterboxd: {
-          count: sourceCounts.letterboxd,
-          error: sourceErrors.letterboxd
-        }
-      });
-      setLastSyncedAt(new Date().toISOString());
-
-      // Reload movie index after successful sync
-      await loadMovies();
-    } catch (error) {
-      setSyncStatus("error");
-      setSyncMessage(error instanceof Error ? error.message : "Sync failed.");
-    }
-  }
-
   // Fuse.js index
   const fuse = useMemo(
     () =>
@@ -296,10 +245,11 @@ export function SearchExperience() {
     [movies]
   );
 
-  // Apply text search + filters
+  // Apply text search + filters + sorting
   const visibleMovies = useMemo(() => {
     const trimmedQuery = query.trim();
-    let results = trimmedQuery ? fuse.search(trimmedQuery).map((r) => r.item) : movies;
+    // If not searching, we must spread movies into a new array so we can sort it.
+    let results = trimmedQuery ? fuse.search(trimmedQuery).map((r) => r.item) : [...movies];
 
     // Source filter
     if (sourceFilter !== "ALL") {
@@ -313,9 +263,19 @@ export function SearchExperience() {
       results = results.filter((m) => m.rating === null);
     }
 
-    // Cap unfiltered/unsearched results
-    if (!trimmedQuery && sourceFilter === "ALL" && ratingFilter === "ALL") {
-      return results.slice(0, 40);
+    // Apply visual sorting only if not actively searching
+    if (!trimmedQuery) {
+      results.sort((a, b) => {
+        const aHasPoster = !!a.posterUrl;
+        const bHasPoster = !!b.posterUrl;
+        
+        // If one has a poster and the other doesn't, the one with the poster comes first.
+        if (aHasPoster && !bHasPoster) return -1;
+        if (!aHasPoster && bHasPoster) return 1;
+        
+        // Otherwise, maintain their relative order
+        return 0;
+      });
     }
 
     return results;
@@ -340,41 +300,18 @@ export function SearchExperience() {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search Fight Club, drama, 1999…"
-          className="h-14 w-full rounded-xl border border-ink/10 bg-white px-5 text-base font-semibold text-ink shadow-sm outline-none transition placeholder:text-ink/30 focus:border-vault focus:ring-4 focus:ring-vault/10"
+          className="h-16 w-full rounded-2xl border border-transparent bg-surface-2 px-6 text-lg font-medium text-text shadow-sm outline-none transition-all placeholder:text-muted/60 focus:border-accent focus:shadow-[0_0_20px_rgba(45,212,191,0.15)] focus:bg-surface"
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
         />
-        <button
-          id="sync-button"
-          type="button"
-          onClick={handleSync}
-          disabled={syncStatus === "syncing"}
-          className="h-14 shrink-0 rounded-xl bg-vault px-6 text-sm font-black uppercase tracking-[0.1em] text-white shadow-sm transition-all hover:bg-vault/85 hover:shadow-soft active:scale-95 disabled:cursor-not-allowed disabled:bg-ink/20 sm:w-32"
-        >
-          {syncStatus === "syncing" ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-              <span>Sync</span>
-            </span>
-          ) : (
-            "Sync"
-          )}
-        </button>
       </div>
-
-      {/* Sync result banner */}
-      <SyncResultBanner
-        status={syncStatus}
-        message={syncMessage}
-        sourceResults={syncSourceResults}
-      />
 
       {/* Filters row */}
       {loadStatus === "ready" && (
         <div className="mx-auto mt-5 max-w-2xl">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-ink/30">
+            <span className="text-xs font-bold uppercase tracking-wider text-muted/60">
               Source
             </span>
             <FilterChip
@@ -392,7 +329,7 @@ export function SearchExperience() {
               active={sourceFilter === "LETTERBOXD"}
               onClick={() => setSourceFilter("LETTERBOXD")}
             />
-            <span className="ml-2 text-xs font-bold uppercase tracking-wider text-ink/30">
+            <span className="ml-2 text-xs font-bold uppercase tracking-wider text-muted/60">
               Rating
             </span>
             <FilterChip
@@ -415,7 +352,7 @@ export function SearchExperience() {
       )}
 
       {/* Count row */}
-      <div className="mt-4 flex items-center justify-between gap-3 text-xs font-semibold text-ink/40">
+      <div className="mt-4 flex items-center justify-between gap-3 text-xs font-semibold text-muted">
         <p>
           {loadStatus === "loading"
             ? "Loading your vault…"
@@ -471,20 +408,39 @@ export function SearchExperience() {
 
         {/* Empty state after sync */}
         {loadStatus === "ready" && visibleMovies.length === 0 && movies.length === 0 && (
-          <div className="rounded-xl border border-ink/8 bg-white px-5 py-10 text-center">
-            <p className="text-4xl mb-3">🎬</p>
-            <p className="text-lg font-black text-ink">Your vault is empty.</p>
-            <p className="mt-2 text-sm font-semibold text-ink/50">
-              Press <strong>Sync</strong> to import your movies from IMDb and Letterboxd.
+          <div className="rounded-xl glass-card px-5 py-10 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center text-accent">
+              <svg 
+                viewBox="0 0 24 24" 
+                width="32" 
+                height="32" 
+                stroke="currentColor" 
+                strokeWidth="1.5" 
+                fill="none" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                className="animate-[spin_12s_linear_infinite]"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <circle cx="12" cy="12" r="3" />
+                <line x1="12" y1="2" x2="12" y2="9" />
+                <line x1="12" y1="15" x2="12" y2="22" />
+                <line x1="2" y1="12" x2="9" y2="12" />
+                <line x1="15" y1="12" x2="22" y2="12" />
+              </svg>
+            </div>
+            <p className="text-lg font-black text-text">Your vault is empty.</p>
+            <p className="mt-2 text-sm font-semibold text-muted">
+              Head to the <strong>Import</strong> page to add your movies from IMDb and Letterboxd.
             </p>
           </div>
         )}
 
         {/* No search results */}
         {loadStatus === "ready" && visibleMovies.length === 0 && movies.length > 0 && (
-          <div className="rounded-xl border border-ink/8 bg-white px-5 py-8 text-center">
-            <p className="text-lg font-black text-ink">No matches found.</p>
-            <p className="mt-2 text-sm font-semibold text-ink/50">
+          <div className="rounded-xl glass-card px-5 py-8 text-center">
+            <p className="text-lg font-black text-text">No matches found.</p>
+            <p className="mt-2 text-sm font-semibold text-muted">
               Try a different title, genre, or release year — or clear your filters.
             </p>
             {hasActiveFilters && (
@@ -496,7 +452,7 @@ export function SearchExperience() {
                   setRatingFilter("ALL");
                   searchInputRef.current?.focus();
                 }}
-                className="mt-4 rounded-full bg-vault/10 px-4 py-2 text-xs font-black text-vault hover:bg-vault/15 transition"
+                className="mt-4 rounded-full bg-surface-2 px-4 py-2 text-xs font-black text-text hover:bg-border transition shadow-sm"
               >
                 Clear all filters
               </button>

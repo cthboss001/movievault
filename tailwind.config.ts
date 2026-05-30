@@ -9,10 +9,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#121417",
-        paper: "#f7f4ef",
-        vault: "#2f5d50",
-        ember: "#d96c3b"
+        background: "var(--background)",
+        surface: "var(--surface)",
+        "surface-2": "var(--surface-2)",
+        border: "var(--border)",
+        accent: "var(--accent)",
+        "accent-hover": "var(--accent-hover)",
+        text: "var(--text)",
+        muted: "var(--muted)",
       },
       fontFamily: {
         sans: [
@@ -36,10 +40,15 @@ const config: Config = {
         "fade-in": {
           "0%": { opacity: "0", transform: "translateY(4px)" },
           "100%": { opacity: "1", transform: "translateY(0)" }
+        },
+        "float": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-8px)" }
         }
       },
       animation: {
-        "fade-in": "fade-in 0.25s ease-out"
+        "fade-in": "fade-in 0.25s ease-out",
+        "float": "float 4s ease-in-out infinite"
       }
     }
   },
