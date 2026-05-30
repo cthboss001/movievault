@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
 import { parseNullableYear } from "@/lib/sync/normalizers/movie";
-import { fetchHtml, toAbsoluteUrl } from "@/lib/sync/providers/http";
+import { fetchHtmlWithCookies, sleep, toAbsoluteUrl } from "@/lib/sync/providers/http";
 import type { NormalizedMovie, SyncSourceAdapter } from "@/lib/sync/types";
 
 const LETTERBOXD_BASE_URL = "https://letterboxd.com";
@@ -13,17 +13,40 @@ export const letterboxdProvider: SyncSourceAdapter = {
     const movies: NormalizedMovie[] = [];
     const seenUrls = new Set<string>();
     let nextUrl: string | null = LETTERBOXD_FILMS_URL;
+    let referer = LETTERBOXD_BASE_URL;
+    let cookies = "";
 
     for (let page = 1; nextUrl && page <= MAX_PAGES; page += 1) {
-      const html = await fetchHtml(nextUrl);
+      if (page > 1) {
+        await sleep(1500 + Math.random() * 800);
+      }
+
+      let html: string;
+      try {
+        const result = await fetchHtmlWithCookies(nextUrl, { referer, cookies });
+        cookies = result.cookies;
+        html = result.html;
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+
+        // Cloudflare blocks server-side requests to paginated pages.
+        // Gracefully stop — keep the movies we already fetched from earlier pages.
+        if (msg.includes("HTTP 403") || msg.includes("HTTP 429")) {
+          console.warn(
+            `[letterboxd] Stopped at page ${page} (${msg}). ` +
+            `Returning ${movies.length} movies fetched so far.`
+          );
+          break;
+        }
+
+        throw error; // re-throw unexpected errors
+      }
+
       const $ = cheerio.load(html);
       const pageMovies = parseLetterboxdPage($);
 
       for (const movie of pageMovies) {
-        if (seenUrls.has(movie.sourceUrl)) {
-          continue;
-        }
-
+        if (seenUrls.has(movie.sourceUrl)) continue;
         seenUrls.add(movie.sourceUrl);
         movies.push(movie);
       }
@@ -31,6 +54,8 @@ export const letterboxdProvider: SyncSourceAdapter = {
       const nextHref = $(".pagination a.next, .paginate-nextprev a.next")
         .first()
         .attr("href");
+
+      referer = nextUrl;
       nextUrl = nextHref ? toAbsoluteUrl(LETTERBOXD_BASE_URL, nextHref) : null;
     }
 
@@ -61,9 +86,7 @@ function parseLetterboxdPage($: cheerio.CheerioAPI): NormalizedMovie[] {
       parseYearFromDisplayName(fullDisplayName) ??
       parseNullableYear(poster.attr("data-film-release-year"));
 
-    if (!title || !href) {
-      return;
-    }
+    if (!title || !href) return;
 
     movies.push({
       title,
@@ -79,38 +102,24 @@ function parseLetterboxdPage($: cheerio.CheerioAPI): NormalizedMovie[] {
 }
 
 function stripYear(value: string | undefined) {
-  if (!value) {
-    return "";
-  }
-
+  if (!value) return "";
   return value.replace(/\s+\(\d{4}\)$/, "").trim();
 }
 
 function parseYearFromDisplayName(value: string | undefined) {
-  if (!value) {
-    return null;
-  }
-
+  if (!value) return null;
   const match = value.match(/\((\d{4})\)\s*$/);
   return match ? Number.parseInt(match[1], 10) : null;
 }
 
 function parseLetterboxdRating(value: string) {
   const ratingText = value.trim();
-
-  if (!ratingText) {
-    return null;
-  }
+  if (!ratingText) return null;
 
   let rating = 0;
   for (const character of ratingText) {
-    if (character === "★") {
-      rating += 1;
-    }
-
-    if (character === "½") {
-      rating += 0.5;
-    }
+    if (character === "★") rating += 1;
+    if (character === "½") rating += 0.5;
   }
 
   return rating > 0 ? rating : null;

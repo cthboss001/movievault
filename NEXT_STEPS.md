@@ -1,93 +1,40 @@
 # MovieVault Next Steps
 
-## Priority 1: Make Sync Work End-to-End
+## ✅ Recently Completed
+- Configured Neon PostgreSQL database and schema.
+- Built bulletproof `/import` infrastructure that bypasses Cloudflare/IMDb bot-gating.
+- Created Letterboxd Bookmarklet scraper.
+- Built native IMDb CSV Export uploader with robust parsing (`papaparse`).
+- Data flows flawlessly into the database, normalizing titles and updating deduplicated watches.
 
-1. Add a real PostgreSQL connection string to `.env`.
-2. Run:
+---
 
-```bash
-npm.cmd run prisma:migrate
-```
+## Priority 1: Poster & Metadata Enrichment (TMDB)
 
-3. Start the app:
+Because the initial import only brings in titles, years, and ratings, the app needs rich metadata (like posters, genres, and runtimes).
 
-```bash
-npm.cmd run dev
-```
+1. **Get API Key**: Create a free account at [themoviedb.org](https://www.themoviedb.org/) and generate an API key. Add it to your `.env` as `TMDB_API_KEY`.
+2. **Build TMDB Client**: Create a service in `lib/tmdb/client.ts` that searches TMDB by `title` and `year`.
+3. **Background Enrichment**: Create an API route (e.g., `/api/enrich`) that finds movies in the database where `posterUrl IS NULL`.
+4. **Update DB**: Call the TMDB client for these movies and update the `posterUrl`, `tmdbId`, `overview`, and `genres` in the Prisma database (the columns already exist!).
+5. **UI Updates**: Update the movie grid in `app/page.tsx` to render `<Image src={posterUrl} />` instead of just text.
 
-4. Open:
+## Priority 2: Secure Deployment to Vercel
 
-```txt
-http://127.0.0.1:3000
-```
+Before exposing this database to the live web, the app needs basic security.
 
-5. Press **Sync**.
-6. Verify rows exist in:
+1. **Vercel Account**: Connect your GitHub repository to a free Vercel account.
+2. **Environment Variables**: Add `DATABASE_URL` (your Neon Postgres string) and `TMDB_API_KEY` to the Vercel dashboard. **Never commit `.env` to GitHub.**
+3. **Add Dual-Role Password Middleware**: To protect your vault while still allowing you to show it off, build a simple Next.js Middleware (`middleware.ts`) with two access levels:
+   - **Admin Login**: Uses an `ADMIN_PASSWORD` env var. Grants full access to view movies and use the `/import` route to manage the database.
+   - **Guest Login**: Uses a `GUEST_PASSWORD` env var. Grants read-only access to view the movie grid and stats, but blocks access to the `/import` page. *(Note: Guests are fully allowed to use the search bar, sorting, and filters, as these are safe read-only actions.)*
+4. **Deploy**: Hit Deploy on Vercel to get a live URL.
 
-```txt
-Movie
-Watch
-ExternalSourceMap
-SyncRun
-```
+## Priority 3: Add Tests & Refinements
 
-Use Prisma Studio if helpful:
-
-```bash
-npx.cmd prisma studio
-```
-
-## Priority 2: Validate Scrapers
-
-1. Confirm Letterboxd sync imports all pages.
-2. Confirm ratings parse correctly.
-3. Confirm duplicate prevention works by pressing **Sync** twice.
-4. Validate IMDb from a non-Codex environment.
-5. If IMDb still returns HTTP `202`, add a fallback strategy or visible source warning.
-
-## Priority 3: Add Tests
-
-1. Save sample Letterboxd HTML fixture.
-2. Save sample IMDb HTML/JSON fixture.
-3. Add parser unit tests for:
-   - title
-   - year
-   - rating
-   - source URL
-   - pagination URL extraction
-4. Add sync-runner tests for deduplication.
-
-## Priority 4: Improve UI
-
-1. Show last synced time.
-2. Show per-source sync status.
-3. Show source counts after sync.
-4. Improve empty database state.
-5. Add filters:
-   - source
-   - year
-   - rating
-   - watched date
-
-## Priority 5: Production Readiness
-
-1. Provision production PostgreSQL.
-2. Add Vercel env vars:
-   - `DATABASE_URL`
-   - `SYNC_SECRET`
-3. Deploy to Vercel.
-4. Configure `movies.tazim.dev`.
-5. Confirm Vercel cron calls `/api/sync`.
-6. Add rate limiting/cooldown for manual sync.
-7. Add logging for scraper failures.
-
-## Priority 6: Future Enhancements
-
-1. Movie detail pages.
-2. Duplicate merge/split tools.
-3. Search index caching.
-4. Poster enrichment from public source pages if feasible.
-5. Better stats visualizations.
-6. Rewatch tracking.
-7. Additional providers.
-
+1. Add unit tests for the CSV parsing edge cases.
+2. Add pagination for the main Movie Grid (currently it renders all movies at once, which will slow down if you have thousands).
+3. Improve search: Add Fuse.js or PostgreSQL full-text search.
+4. Add filters to the UI (Filter by Source, Year, Rating, Genre).
+5. Build Movie detail pages (`/movie/[id]`) showing the overview and TMDB metadata.
+6. Build a Stats page (e.g. "Most watched years", "Average rating").

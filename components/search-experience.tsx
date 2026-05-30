@@ -1,12 +1,19 @@
 "use client";
 
 import Fuse from "fuse.js";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MovieGrid } from "@/components/movie-grid";
-import type { MovieSearchItem } from "@/types/movie";
+import type { MovieSearchItem, MovieSource } from "@/types/movie";
 
 type MoviesResponse = {
   movies: MovieSearchItem[];
+  databaseMissing?: boolean;
+  error?: string;
+};
+
+type SyncSourceResult = {
+  count: number;
+  error?: string;
 };
 
 type SyncResponse = {
@@ -24,52 +31,209 @@ type SyncResponse = {
   error?: string;
 };
 
+type SourceFilter = "ALL" | MovieSource;
+type RatingFilter = "ALL" | "RATED" | "UNRATED";
+
+// ── Small UI atoms ────────────────────────────────────────────────────────────
+
+function FilterChip({
+  label,
+  active,
+  onClick
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "rounded-full px-3 py-1 text-xs font-bold transition-all duration-150",
+        active
+          ? "bg-vault text-white shadow-sm"
+          : "bg-white/70 text-ink/60 border border-ink/10 hover:border-vault/40 hover:text-vault"
+      ].join(" ")}
+    >
+      {label}
+    </button>
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <div className="overflow-hidden rounded-xl border border-ink/8 bg-white animate-pulse">
+      <div className="aspect-[2/3] bg-ink/8" />
+      <div className="p-3 space-y-2">
+        <div className="h-3 w-3/4 rounded bg-ink/8" />
+        <div className="h-2 w-1/3 rounded bg-ink/6" />
+        <div className="h-2 w-1/2 rounded bg-ink/5" />
+      </div>
+    </div>
+  );
+}
+
+function SetupBanner() {
+  return (
+    <div className="mx-auto mt-6 max-w-2xl rounded-xl border border-amber-200 bg-amber-50 px-5 py-5 text-sm text-amber-900">
+      <p className="font-black text-base mb-2">🗄️ Database not configured yet</p>
+      <p className="font-semibold text-amber-800 mb-3">
+        To start using MovieVault, connect a PostgreSQL database:
+      </p>
+      <ol className="list-decimal list-inside space-y-1.5 font-semibold text-amber-800">
+        <li>
+          Create a <code className="bg-amber-100 rounded px-1 font-mono text-xs">.env</code> file
+          in the project root
+        </li>
+        <li>
+          Add:{" "}
+          <code className="bg-amber-100 rounded px-1 font-mono text-xs">
+            DATABASE_URL=&quot;postgresql://USER:PASS@HOST:5432/movievault&quot;
+          </code>
+        </li>
+        <li>
+          Run:{" "}
+          <code className="bg-amber-100 rounded px-1 font-mono text-xs">
+            npm run prisma:migrate
+          </code>
+        </li>
+        <li>Restart the dev server, then press the Sync button above.</li>
+      </ol>
+    </div>
+  );
+}
+
+function SyncResultBanner({
+  status,
+  message,
+  sourceResults
+}: {
+  status: "idle" | "success" | "error" | "syncing";
+  message: string | null;
+  sourceResults?: { imdb: SyncSourceResult; letterboxd: SyncSourceResult };
+}) {
+  if (!message && status !== "syncing") return null;
+
+  if (status === "syncing") {
+    return (
+      <div className="mx-auto mt-4 max-w-2xl rounded-xl border border-vault/20 bg-white px-4 py-3 flex items-center gap-3">
+        <span className="inline-block h-4 w-4 rounded-full border-2 border-vault border-t-transparent animate-spin" />
+        <span className="text-sm font-semibold text-ink/70">
+          Fetching movies from IMDb and Letterboxd…
+        </span>
+      </div>
+    );
+  }
+
+  const isError = status === "error";
+  return (
+    <div
+      className={[
+        "mx-auto mt-4 max-w-2xl rounded-xl border px-4 py-3",
+        isError
+          ? "border-red-200 bg-red-50 text-red-700"
+          : "border-vault/20 bg-white text-ink/70"
+      ].join(" ")}
+    >
+      <p className="text-sm font-semibold">{message}</p>
+      {sourceResults && !isError && (
+        <div className="mt-2 flex flex-wrap gap-3">
+          {(["imdb", "letterboxd"] as const).map((src) => {
+            const res = sourceResults[src];
+            const label = src === "imdb" ? "IMDb" : "Letterboxd";
+            return res.error ? (
+              <span
+                key={src}
+                className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-600"
+                title={res.error}
+              >
+                {label}: failed
+              </span>
+            ) : (
+              <span
+                key={src}
+                className="rounded-full bg-vault/10 px-2.5 py-0.5 text-xs font-bold text-vault"
+              >
+                {label}: {res.count} movies
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
 export function SearchExperience() {
   const [movies, setMovies] = useState<MovieSearchItem[]>([]);
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [loadStatus, setLoadStatus] = useState<
+    "loading" | "ready" | "error" | "no-database"
+  >("loading");
   const [syncStatus, setSyncStatus] = useState<
     "idle" | "syncing" | "success" | "error"
   >("idle");
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncSourceResults, setSyncSourceResults] = useState<{
+    imdb: SyncSourceResult;
+    letterboxd: SyncSourceResult;
+  } | undefined>(undefined);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+
+  // Filters
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("ALL");
+  const [ratingFilter, setRatingFilter] = useState<RatingFilter>("ALL");
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   async function loadMovies() {
     const response = await fetch("/api/movies");
+    const data = (await response.json()) as MoviesResponse;
 
-    if (!response.ok) {
-      throw new Error("Failed to load movies.");
+    if (data.databaseMissing) {
+      setLoadStatus("no-database");
+      return;
     }
 
-    const data = (await response.json()) as MoviesResponse;
+    if (!response.ok) {
+      throw new Error(data.error ?? "Failed to load movies.");
+    }
+
     setMovies(data.movies);
-    setStatus("ready");
+    setLoadStatus("ready");
   }
 
   useEffect(() => {
     let active = true;
 
-    async function loadInitialMovies() {
+    async function boot() {
       try {
         const response = await fetch("/api/movies");
+        const data = (await response.json()) as MoviesResponse;
+
+        if (!active) return;
+
+        if (data.databaseMissing) {
+          setLoadStatus("no-database");
+          return;
+        }
 
         if (!response.ok) {
-          throw new Error("Failed to load movies.");
+          setLoadStatus("error");
+          return;
         }
 
-        const data = (await response.json()) as MoviesResponse;
-        if (active) {
-          setMovies(data.movies);
-          setStatus("ready");
-        }
+        setMovies(data.movies);
+        setLoadStatus("ready");
       } catch {
-        if (active) {
-          setStatus("error");
-        }
+        if (active) setLoadStatus("error");
       }
     }
 
-    loadInitialMovies();
-
+    boot();
     return () => {
       active = false;
     };
@@ -77,28 +241,37 @@ export function SearchExperience() {
 
   async function handleSync() {
     setSyncStatus("syncing");
-    setSyncMessage("Syncing IMDb and Letterboxd...");
+    setSyncMessage(null);
+    setSyncSourceResults(undefined);
 
     try {
-      const response = await fetch("/api/sync", {
-        method: "POST"
-      });
+      const response = await fetch("/api/sync", { method: "POST" });
       const data = (await parseJsonResponse(response)) as SyncResponse;
 
       if (!response.ok || !data.result) {
         throw new Error(data.error ?? "Sync failed.");
       }
 
-      const warningText = Object.entries(data.result.sourceErrors)
-        .map(([source, message]) => `${source}: ${message}`)
-        .join(" ");
+      const { syncedCount, addedCount, updatedCount, skippedCount, sourceCounts, sourceErrors } =
+        data.result;
 
       setSyncStatus("success");
       setSyncMessage(
-        `Synced ${data.result.syncedCount} movies. Added ${data.result.addedCount}, updated ${data.result.updatedCount}, skipped ${data.result.skippedCount}.` +
-          (warningText ? ` Warning: ${warningText}` : "")
+        `Sync complete — ${syncedCount} movies (${addedCount} new, ${updatedCount} updated, ${skippedCount} unchanged)`
       );
+      setSyncSourceResults({
+        imdb: {
+          count: sourceCounts.imdb,
+          error: sourceErrors.imdb
+        },
+        letterboxd: {
+          count: sourceCounts.letterboxd,
+          error: sourceErrors.letterboxd
+        }
+      });
+      setLastSyncedAt(new Date().toISOString());
 
+      // Reload movie index after successful sync
       await loadMovies();
     } catch (error) {
       setSyncStatus("error");
@@ -106,13 +279,14 @@ export function SearchExperience() {
     }
   }
 
+  // Fuse.js index
   const fuse = useMemo(
     () =>
       new Fuse(movies, {
         keys: [
           { name: "title", weight: 0.72 },
-          { name: "genres", weight: 0.2 },
-          { name: "year", weight: 0.08 }
+          { name: "genres", weight: 0.15 },
+          { name: "year", weight: 0.13 }
         ],
         threshold: 0.35,
         includeScore: true,
@@ -122,82 +296,213 @@ export function SearchExperience() {
     [movies]
   );
 
+  // Apply text search + filters
   const visibleMovies = useMemo(() => {
     const trimmedQuery = query.trim();
+    let results = trimmedQuery ? fuse.search(trimmedQuery).map((r) => r.item) : movies;
 
-    if (!trimmedQuery) {
-      return movies.slice(0, 25);
+    // Source filter
+    if (sourceFilter !== "ALL") {
+      results = results.filter((m) => m.sources.includes(sourceFilter));
     }
 
-    return fuse.search(trimmedQuery).map((result) => result.item);
-  }, [fuse, movies, query]);
+    // Rating filter
+    if (ratingFilter === "RATED") {
+      results = results.filter((m) => m.rating !== null);
+    } else if (ratingFilter === "UNRATED") {
+      results = results.filter((m) => m.rating === null);
+    }
+
+    // Cap unfiltered/unsearched results
+    if (!trimmedQuery && sourceFilter === "ALL" && ratingFilter === "ALL") {
+      return results.slice(0, 40);
+    }
+
+    return results;
+  }, [fuse, movies, query, sourceFilter, ratingFilter]);
+
+  const hasActiveFilters =
+    query.trim() !== "" || sourceFilter !== "ALL" || ratingFilter !== "ALL";
+
+  const imdbCount = movies.filter((m) => m.sources.includes("IMDB")).length;
+  const lbdCount = movies.filter((m) => m.sources.includes("LETTERBOXD")).length;
 
   return (
     <section className="mx-auto mt-8 w-full max-w-5xl sm:mt-10">
+      {/* Search + Sync bar */}
       <div className="mx-auto flex max-w-2xl flex-col gap-3 sm:flex-row">
         <label htmlFor="movie-search" className="sr-only">
           Search watched movies
         </label>
         <input
           id="movie-search"
+          ref={searchInputRef}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search Fight Club, drama, 1999..."
-          className="h-14 w-full rounded-lg border border-ink/10 bg-white px-5 text-lg font-semibold text-ink shadow-soft outline-none transition placeholder:text-ink/35 focus:border-vault focus:ring-4 focus:ring-vault/15"
+          placeholder="Search Fight Club, drama, 1999…"
+          className="h-14 w-full rounded-xl border border-ink/10 bg-white px-5 text-base font-semibold text-ink shadow-sm outline-none transition placeholder:text-ink/30 focus:border-vault focus:ring-4 focus:ring-vault/10"
           autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
         />
         <button
+          id="sync-button"
           type="button"
           onClick={handleSync}
           disabled={syncStatus === "syncing"}
-          className="h-14 shrink-0 rounded-lg bg-vault px-6 text-sm font-black uppercase tracking-[0.12em] text-white shadow-soft transition hover:bg-vault/90 disabled:cursor-not-allowed disabled:bg-ink/30 sm:w-32"
+          className="h-14 shrink-0 rounded-xl bg-vault px-6 text-sm font-black uppercase tracking-[0.1em] text-white shadow-sm transition-all hover:bg-vault/85 hover:shadow-soft active:scale-95 disabled:cursor-not-allowed disabled:bg-ink/20 sm:w-32"
         >
-          {syncStatus === "syncing" ? "Syncing" : "Sync"}
+          {syncStatus === "syncing" ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+              <span>Sync</span>
+            </span>
+          ) : (
+            "Sync"
+          )}
         </button>
       </div>
 
-      {syncMessage ? (
-        <div
-          className={[
-            "mx-auto mt-4 max-w-2xl rounded-lg border px-4 py-3 text-sm font-semibold",
-            syncStatus === "error"
-              ? "border-red-200 bg-red-50 text-red-700"
-              : "border-vault/20 bg-white text-ink/70"
-          ].join(" ")}
-        >
-          {syncMessage}
-        </div>
-      ) : null}
+      {/* Sync result banner */}
+      <SyncResultBanner
+        status={syncStatus}
+        message={syncMessage}
+        sourceResults={syncSourceResults}
+      />
 
-      <div className="mt-6 flex items-center justify-between gap-3 text-sm font-semibold text-ink/60">
+      {/* Filters row */}
+      {loadStatus === "ready" && (
+        <div className="mx-auto mt-5 max-w-2xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-ink/30">
+              Source
+            </span>
+            <FilterChip
+              label="All"
+              active={sourceFilter === "ALL"}
+              onClick={() => setSourceFilter("ALL")}
+            />
+            <FilterChip
+              label={`IMDb${imdbCount > 0 ? ` (${imdbCount})` : ""}`}
+              active={sourceFilter === "IMDB"}
+              onClick={() => setSourceFilter("IMDB")}
+            />
+            <FilterChip
+              label={`Letterboxd${lbdCount > 0 ? ` (${lbdCount})` : ""}`}
+              active={sourceFilter === "LETTERBOXD"}
+              onClick={() => setSourceFilter("LETTERBOXD")}
+            />
+            <span className="ml-2 text-xs font-bold uppercase tracking-wider text-ink/30">
+              Rating
+            </span>
+            <FilterChip
+              label="Any"
+              active={ratingFilter === "ALL"}
+              onClick={() => setRatingFilter("ALL")}
+            />
+            <FilterChip
+              label="Rated"
+              active={ratingFilter === "RATED"}
+              onClick={() => setRatingFilter("RATED")}
+            />
+            <FilterChip
+              label="Unrated"
+              active={ratingFilter === "UNRATED"}
+              onClick={() => setRatingFilter("UNRATED")}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Count row */}
+      <div className="mt-4 flex items-center justify-between gap-3 text-xs font-semibold text-ink/40">
         <p>
-          {status === "loading"
-            ? "Loading your vault..."
-            : `${visibleMovies.length} of ${movies.length} movies`}
+          {loadStatus === "loading"
+            ? "Loading your vault…"
+            : loadStatus === "no-database"
+              ? "No database connected"
+              : loadStatus === "error"
+                ? "Could not load movies"
+                : hasActiveFilters
+                  ? `${visibleMovies.length} of ${movies.length} movies`
+                  : `${movies.length} movies in vault`}
         </p>
-        {query ? <p>Searching for &quot;{query}&quot;</p> : null}
+        {lastSyncedAt ? (
+          <p>
+            Last synced:{" "}
+            {new Date(lastSyncedAt).toLocaleTimeString(undefined, {
+              hour: "2-digit",
+              minute: "2-digit"
+            })}
+          </p>
+        ) : null}
       </div>
 
+      {/* Content area */}
       <div className="mt-4">
-        {status === "error" ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-5 text-sm font-semibold text-red-700">
-            MovieVault could not load movies. Check your database connection and
-            run the initial sync or seed script.
+        {/* Loading skeletons */}
+        {loadStatus === "loading" && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
           </div>
-        ) : null}
+        )}
 
-        {status !== "error" && visibleMovies.length > 0 ? (
-          <MovieGrid movies={visibleMovies} />
-        ) : null}
+        {/* No database */}
+        {loadStatus === "no-database" && <SetupBanner />}
 
-        {status === "ready" && visibleMovies.length === 0 ? (
-          <div className="rounded-lg border border-ink/10 bg-white px-4 py-8 text-center">
-            <p className="text-lg font-black text-ink">No matches found.</p>
-            <p className="mt-2 text-sm font-semibold text-ink/55">
-              Try a title fragment, genre, or release year.
+        {/* DB error */}
+        {loadStatus === "error" && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-5 text-sm font-semibold text-red-700">
+            <p className="font-black text-base mb-1">⚠️ Could not connect to the database</p>
+            <p>
+              Check that <code className="font-mono text-xs bg-red-100 rounded px-1">DATABASE_URL</code> is set
+              correctly in your <code className="font-mono text-xs bg-red-100 rounded px-1">.env</code> file
+              and the migration has been applied.
             </p>
           </div>
-        ) : null}
+        )}
+
+        {/* Movies grid */}
+        {loadStatus === "ready" && visibleMovies.length > 0 && (
+          <MovieGrid movies={visibleMovies} />
+        )}
+
+        {/* Empty state after sync */}
+        {loadStatus === "ready" && visibleMovies.length === 0 && movies.length === 0 && (
+          <div className="rounded-xl border border-ink/8 bg-white px-5 py-10 text-center">
+            <p className="text-4xl mb-3">🎬</p>
+            <p className="text-lg font-black text-ink">Your vault is empty.</p>
+            <p className="mt-2 text-sm font-semibold text-ink/50">
+              Press <strong>Sync</strong> to import your movies from IMDb and Letterboxd.
+            </p>
+          </div>
+        )}
+
+        {/* No search results */}
+        {loadStatus === "ready" && visibleMovies.length === 0 && movies.length > 0 && (
+          <div className="rounded-xl border border-ink/8 bg-white px-5 py-8 text-center">
+            <p className="text-lg font-black text-ink">No matches found.</p>
+            <p className="mt-2 text-sm font-semibold text-ink/50">
+              Try a different title, genre, or release year — or clear your filters.
+            </p>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setSourceFilter("ALL");
+                  setRatingFilter("ALL");
+                  searchInputRef.current?.focus();
+                }}
+                className="mt-4 rounded-full bg-vault/10 px-4 py-2 text-xs font-black text-vault hover:bg-vault/15 transition"
+              >
+                Clear all filters
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -205,16 +510,10 @@ export function SearchExperience() {
 
 async function parseJsonResponse(response: Response) {
   const text = await response.text();
-
-  if (!text) {
-    return {};
-  }
-
+  if (!text) return {};
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    return {
-      error: text
-    };
+    return { error: text };
   }
 }

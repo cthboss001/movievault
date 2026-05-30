@@ -1,9 +1,27 @@
+import { env } from "@/lib/env";
 import { getMovieSearchIndex } from "@/lib/movies";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const movies = await getMovieSearchIndex();
+  if (!env.DATABASE_URL) {
+    return Response.json({ movies: [], databaseMissing: true });
+  }
 
-  return Response.json({ movies });
+  try {
+    const movies = await getMovieSearchIndex();
+    return Response.json({ movies });
+  } catch (error) {
+    console.error("[/api/movies]", error);
+    return Response.json(
+      {
+        movies: [],
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to load movies from database."
+      },
+      { status: 500 }
+    );
+  }
 }

@@ -1,3 +1,5 @@
+export type MovieSource = "IMDB" | "LETTERBOXD";
+
 export type MovieSearchItem = {
   id: string;
   title: string;
@@ -7,6 +9,8 @@ export type MovieSearchItem = {
   watchedDate: string | null;
   rating: number | null;
   genres: string[];
+  /** All sync sources that have this movie (e.g. IMDB, LETTERBOXD, or both) */
+  sources: MovieSource[];
 };
 
 export type MovieCardData = MovieSearchItem;
