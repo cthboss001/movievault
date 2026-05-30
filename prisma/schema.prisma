@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WatchSource {
+  LETTERBOXD
+  IMDB
+}
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model Movie {
+  id              String              @id @default(cuid())
+  title           String
+  normalizedTitle String
+  year            Int?
+  overview        String?
+  posterUrl       String?
+  runtimeMinutes  Int?
+  tmdbId          Int?                @unique
+  imdbId          String?             @unique
+  lastSyncedAt    DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  genres          MovieGenre[]
+  sourceMaps      ExternalSourceMap[]
+  watches         Watch[]
+
+  @@index([normalizedTitle, year])
+}
+
+model Watch {
+  id            String      @id @default(cuid())
+  movieId       String
+  source        WatchSource
+  watchedDate   DateTime?
+  rating        Float?
+  sourceUrl     String?
+  sourceEntryId String?
+  lastSyncedAt  DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  movie         Movie       @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@unique([source, sourceEntryId])
+  @@index([movieId])
+  @@index([source, watchedDate])
+}
+
+model Genre {
+  id        String       @id @default(cuid())
+  name      String
+  slug      String       @unique
+  createdAt DateTime     @default(now())
+  movies    MovieGenre[]
+}
+
+model MovieGenre {
+  movieId String
+  genreId String
+  movie   Movie  @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  genre   Genre  @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([movieId, genreId])
+}
+
+model ExternalSourceMap {
+  id            String      @id @default(cuid())
+  source        WatchSource
+  sourceMovieId String
+  sourceUrl     String?
+  movieId       String
+  lastSyncedAt  DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  movie         Movie       @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@unique([source, sourceMovieId])
+  @@index([movieId])
+}
+
+model SyncRun {
+  id            String      @id @default(cuid())
+  source        WatchSource
+  status        SyncStatus
+  startedAt     DateTime    @default(now())
+  finishedAt    DateTime?
+  importedCount Int         @default(0)
+  updatedCount  Int         @default(0)
+  skippedCount  Int         @default(0)
+  errorMessage  String?
+
+  @@index([source, startedAt])
+}
